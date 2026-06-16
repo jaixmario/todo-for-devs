@@ -7,10 +7,12 @@ data class Task(
     val title: String,
     val description: String = "",
     val isCompleted: Boolean = false,
+    val isExpired: Boolean = false,
     val category: DevCategory = DevCategory.Feature,
     val priority: Priority = Priority.Medium,
     val scheduledTime: String? = null, // e.g., "8:00 PM"
-    val timerDurationMinutes: Int? = null
+    val timerDurationMinutes: Int? = null,
+    val scheduledTimeMillis: Long? = null
 )
 
 enum class DevCategory {

@@ -1,6 +1,7 @@
 package com.mario.ui
 
 import android.Manifest
+import android.app.TimePickerDialog
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -27,6 +28,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -35,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mario.ui.ui.theme.UITheme
+import java.util.Calendar
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -236,17 +239,23 @@ fun DevTaskItem(
     onToggle: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val containerColor = when {
+        task.isCompleted -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+        task.isExpired -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f)
+        else -> MaterialTheme.colorScheme.surface
+    }
+
+    val borderColor = when {
+        task.isCompleted -> Color.Transparent
+        task.isExpired -> MaterialTheme.colorScheme.error.copy(alpha = 0.4f)
+        else -> MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (task.isCompleted) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f) 
-                             else MaterialTheme.colorScheme.surface
-        ),
-        border = BorderStroke(
-            width = 1.dp,
-            color = if (task.isCompleted) Color.Transparent else MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)
-        )
+        colors = CardDefaults.cardColors(containerColor = containerColor),
+        border = BorderStroke(width = 1.dp, color = borderColor)
     ) {
         Row(
             modifier = Modifier
@@ -269,9 +278,23 @@ fun DevTaskItem(
                         textDecoration = if (task.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
                         fontFamily = FontFamily.Monospace
                     ),
-                    color = if (task.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
+                    color = when {
+                        task.isCompleted -> MaterialTheme.colorScheme.onSurfaceVariant
+                        task.isExpired -> MaterialTheme.colorScheme.error
+                        else -> MaterialTheme.colorScheme.onSurface
+                    }
                 )
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (task.isExpired && !task.isCompleted) {
+                        Text(
+                            text = "[EXPIRED]",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.error,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    
                     Text(
                         text = "#${task.category.name.lowercase()}",
                         style = MaterialTheme.typography.labelSmall,
@@ -282,17 +305,9 @@ fun DevTaskItem(
                     
                     if (task.scheduledTime != null) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Schedule, null, modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.outline)
+                            Icon(Icons.Default.Schedule, null, modifier = Modifier.size(12.dp), tint = if (task.isExpired) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline)
                             Spacer(modifier = Modifier.width(2.dp))
-                            Text(task.scheduledTime, style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.outline)
-                        }
-                    }
-                    
-                    if (task.timerDurationMinutes != null) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Outlined.Timer, null, modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.secondary)
-                            Spacer(modifier = Modifier.width(2.dp))
-                            Text("${task.timerDurationMinutes}m", style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.secondary)
+                            Text(task.scheduledTime, style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace, color = if (task.isExpired) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline)
                         }
                     }
                 }
@@ -354,6 +369,21 @@ fun AddDevTaskDialog(onDismiss: () -> Unit, onAdd: (String, DevCategory, Priorit
     var selectedPriority by remember { mutableStateOf(Priority.Medium) }
     var scheduledTime by remember { mutableStateOf("") }
     var timerMinutes by remember { mutableStateOf("") }
+    
+    val context = LocalContext.current
+    val calendar = Calendar.getInstance()
+
+    val timePickerDialog = TimePickerDialog(
+        context,
+        { _, hour, minute ->
+            val amPm = if (hour < 12) "AM" else "PM"
+            val h = if (hour == 0) 12 else if (hour > 12) hour - 12 else hour
+            scheduledTime = String.format("%d:%02d %s", h, minute, amPm)
+        },
+        calendar.get(Calendar.HOUR_OF_DAY),
+        calendar.get(Calendar.MINUTE),
+        false
+    )
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -369,16 +399,17 @@ fun AddDevTaskDialog(onDismiss: () -> Unit, onAdd: (String, DevCategory, Priorit
                     colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent)
                 )
                 
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextField(
-                        value = scheduledTime,
-                        onValueChange = { scheduledTime = it },
-                        placeholder = { Text("Time (e.g. 8:00 PM)", fontFamily = FontFamily.Monospace) },
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedButton(
+                        onClick = { timePickerDialog.show() },
                         modifier = Modifier.weight(1f),
-                        label = { Text("SCHEDULE", fontSize = 10.sp, fontFamily = FontFamily.Monospace) },
-                        textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                        colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent)
-                    )
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(Icons.Default.Schedule, null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(if (scheduledTime.isEmpty()) "SET TIME" else scheduledTime, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                    }
+
                     TextField(
                         value = timerMinutes,
                         onValueChange = { if (it.all { c -> c.isDigit() }) timerMinutes = it },
